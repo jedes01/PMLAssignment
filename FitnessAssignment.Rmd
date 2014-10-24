@@ -1,11 +1,28 @@
+# Classifying Exercises in the Human Activity Recognition WLE Dataset
 
+## Synopsis
+In this analysis, we explore the Human Activity Recognition WLE dataset (available [here](http://groupware.les.inf.puc-rio.br/har)) to develop a model to predict the type of barbell lift participants wearing accelerometers were executing:
+
+* Class A: Exactly according to the specification
+* Class B: Throwing the elbows to the front
+* Class C: Lifting the dumbbell only halfway
+* Class D: Lowering the dumbbell only halfway
+* Class E: Throwing the hips to the front
+
+Data from the accelerometers was compiled to generate the WLE dataset containing 159 predictors linked above. This dataset was preprocessed and used to train a Generalized Boosting Model using 3-fold cross-validation to reduce overfitting.  The resulting model was then used to predict 20 test cases.
+
+## Data Processing
+
+The caret and gbm libraries were used to train the model, and the xtable and ggplot2 libraries were used to present results.
 ```{r}
-library(caret); library(gbm); library(xtable)
+library(caret); library(gbm); library(xtable); library(ggplot2)
 ```
 
 
+The HAR WLE data was downloaded and read into R using the read.csv function.  The data was then partitioned into training and test sets (with 1/4 of the data being set aside for testing/tuning).
 
-```{r}
+The resulting training data was processed by removing columns in which more than half of the data was NA (this actually ended up removing all of the NAs from the dataset) and removing columns in which there was near-zero variance.
+```{r, cache=T}
 ## Download training dataset
 trainURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 temp <- tempfile(); download.file(trainURL, temp)
@@ -23,32 +40,43 @@ training <- training[,-nzvCols]
 ```
 
 
-```{r}
+## Building the model
+
+The new, leaner, meaner dataset comprising 14,718 observations of 59 variables (52, excluding the predictee and six ID/timestamp variables) was used to train a model using the gbm package (which combines boosting with decision trees).  3-fold cross-validation was used to reduce the impact of overfitting.
+```{r, cache=T}
 fitnessModel <-train(training$classe~.,method="gbm",
                      trControl=trainControl(method = "cv", number=3),
                      data=training[,-c(1:6,59)], verbose=F)
 ```
 
 
-
-```{r}
+The most influential variables according to this model are reproduced below. The roll_belt variable is by far the most influential in this model.
+```{r, cache=T, results='asis'}
 influencers <- summary(fitnessModel, plotit=F)[1:10,]; rownames(influencers) <- NULL
-xtable(influencers, type="html")
+print(xtable(influencers), type="html")
 ```
 
 
-```{r}
+As can be seen from the chart below, increased power in the form of both more boosting iterations and a greater maximum tree depth seem likely to improve accuracy further. These options were not explored further due to limited computing  resources (the model already takes kind of a while to train).
+```{r, cache=T}
 ggplot(fitnessModel) + 
         theme(legend.position="top", plot.title=element_text(face="bold")) +
         ggtitle("Generalized Boosting Model Tuning Metrics")
 ```
 
-```{r}
+
+## Results
+
+```{r, cache=T}
 conMatrix <- confusionMatrix(testing$classe, predict(fitnessModel, testing))
 print(conMatrix$overall)
 ```
 
-```{r}
+Using the model on the partitioned test data set shows a predicted model accuracy of `r paste0(round(conMatrix$overall[1]*100,2),"%")` (that is to say, an out-of-sample error rate of `r paste0(100-round(conMatrix$overall[1]*100,2),"%")`).
+
+
+We are now prepared to download the 20 test cases and generate the model's final predictions below:
+```{r, cache=T, results='asis'}
 ## Download testing dataset
 testURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
 temp <- tempfile()
@@ -58,6 +86,6 @@ unlink(temp)
 
 ## Generate model predictions
 fmPredict <- data.frame(predict(fitnessModel, testData))
-colNames(fmPredict) <- "Model.Prediction"
+colnames(fmPredict) <- "Model.Prediction"
 print(xtable(fmPredict), type="html")
 ```
