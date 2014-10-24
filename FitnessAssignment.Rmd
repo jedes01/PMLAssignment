@@ -1,0 +1,63 @@
+
+```{r}
+library(caret); library(gbm); library(xtable)
+```
+
+
+
+```{r}
+## Download training dataset
+trainURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+temp <- tempfile(); download.file(trainURL, temp)
+trainData <- read.csv(temp); unlink(temp)
+
+## Partition training dataset, reserving 1/4 of the data for testing/tuning.
+inTrain <- createDataPartition(trainData$classe, p = 3/4)[[1]]
+training <- trainData[inTrain,]; testing <- trainData[-inTrain,]
+
+## Remove columns with a lot of NAs and/or very little variance. 
+naFree <- sapply(training, function(x) sum(is.na(x))<(nrow(training)/2))
+training <- training[,naFree]
+nzvCols <- nearZeroVar(training, saveMetrics=F)
+training <- training[,-nzvCols]
+```
+
+
+```{r}
+fitnessModel <-train(training$classe~.,method="gbm",
+                     trControl=trainControl(method = "cv", number=3),
+                     data=training[,-c(1:6,59)], verbose=F)
+```
+
+
+
+```{r}
+influencers <- summary(fitnessModel, plotit=F)[1:10,]; rownames(influencers) <- NULL
+xtable(influencers, type="html")
+```
+
+
+```{r}
+ggplot(fitnessModel) + 
+        theme(legend.position="top", plot.title=element_text(face="bold")) +
+        ggtitle("Generalized Boosting Model Tuning Metrics")
+```
+
+```{r}
+conMatrix <- confusionMatrix(testing$classe, predict(fitnessModel, testing))
+print(conMatrix$overall)
+```
+
+```{r}
+## Download testing dataset
+testURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+temp <- tempfile()
+download.file(testURL, temp)
+testData <- read.csv(temp)
+unlink(temp)
+
+## Generate model predictions
+fmPredict <- data.frame(predict(fitnessModel, testData))
+colNames(fmPredict) <- "Model.Prediction"
+print(xtable(fmPredict), type="html")
+```
